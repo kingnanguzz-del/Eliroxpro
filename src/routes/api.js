@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const binance = require('../data/binance');
+const binance = require('../data/twelvedata');
 const { scoreLatest } = require('../analytics/confluence');
 const { runBacktest } = require('../backtest/engine');
 
+// GET /api/signal?symbol=BTCUSDT&interval=15m
 router.get('/signal', async (req, res) => {
   try {
     const { symbol = 'BTCUSDT', interval = '15m' } = req.query;
@@ -16,6 +17,7 @@ router.get('/signal', async (req, res) => {
   }
 });
 
+// GET /api/backtest?symbol=BTCUSDT&interval=15m&limit=1000&entryThreshold=65&stopLossPct=1&takeProfitPct=2
 router.get('/backtest', async (req, res) => {
   try {
     const {
@@ -41,6 +43,7 @@ router.get('/backtest', async (req, res) => {
   }
 });
 
+// GET /api/price?symbol=BTCUSDT
 router.get('/price', async (req, res) => {
   try {
     const { symbol = 'BTCUSDT' } = req.query;
