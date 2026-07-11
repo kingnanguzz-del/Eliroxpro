@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bena analytics</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css"></script>
+<style>
+  body { background: #0b0f14; color: #e6edf3; }
+  .card { background: #121821; border: 1px solid #1e2733; }
+</style>
+</head>
+<body class="min-h-screen p-4 max-w-md mx-auto">
+
+  <h1 class="text-2xl font-bold mb-1">BENA SYSTEM</h1>
+  <p class="text-sm text-gray-400 mb-4">Transparent analytics. No black box.</p>
+
+  <div class="card rounded-xl p-4 mb-4">
+    <label class="text-xs text-gray-400">Symbol</label>
+    <input id="symbol" value="BTCUSDT" class="w-full bg-transparent border border-gray-700 rounded-lg p-2 mt-1 mb-2 text-lg font-mono" />
+    <label class="text-xs text-gray-400">Interval</label>
+    <select id="interval" class="w-full bg-[#0b0f14] border border-gray-700 rounded-lg p-2 mt-1">
+      <option value="5m">5m</option>
+      <option value="15m" selected>15m</option>
+      <option value="1h">1h</option>
+      <option value="4h">4h</option>
+    </select>
+    <button onclick="getSignal()" class="w-full bg-blue-600 hover:bg-blue-500 rounded-lg py-2 mt-3 font-semibold">Get Signal</button>
+  </div>
+
+  <div id="signalCard" class="card rounded-xl p-4 mb-4 hidden"></div>
+
+  <div class="card rounded-xl p-4 mb-4">
+    <h2 class="font-semibold mb-2">Backtest Strategy</h2>
+    <div class="grid grid-cols-2 gap-2 mb-2">
+      <div>
+        <label class="text-xs text-gray-400">Stop Loss %</label>
+        <input id="sl" value="1.0" class="w-full bg-transparent border border-gray-700 rounded-lg p-2 mt-1" />
+      </div>
+      <div>
+        <label class="text-xs text-gray-400">Take Profit %</label>
+        <input id="tp" value="2.0" class="w-full bg-transparent border border-gray-700 rounded-lg p-2 mt-1" />
+      </div>
+    </div>
+    <label class="text-xs text-gray-400">Entry Threshold (score)</label>
+    <input id="threshold" value="65" class="w-full bg-transparent border border-gray-700 rounded-lg p-2 mt-1 mb-2" />
+    <button onclick="runBacktest()" class="w-full bg-purple-600 hover:bg-purple-500 rounded-lg py-2 font-semibold">Run Backtest</button>
+  </div>
+
+  <div id="backtestCard" class="card rounded-xl p-4 mb-8 hidden">
+    <h3 class="font-semibold mb-2">Results</h3>
+    <div class="grid grid-cols-2 gap-2 text-sm" id="backtestStats"></div>
+  </div>
+
+<script>
+const API = '/api';
+
+async function getSignal() {
+  const symbol = document.getElementById('symbol').value.trim();
+  const interval = document.getElementById('interval').value;
+  const card = document.getElementById('signalCard');
+  card.classList.remove('hidden');
+  card.innerHTML = '<p class="text-gray-400">Loading...</p>';
+
+  try {
+    const res = await fetch(`${API}/signal?symbol=${symbol}&interval=${interval}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    card.innerHTML = `
+      <div class="flex justify-between items-center mb-2">
+        <span class="text-2xl font-bold">${data.score}/100</span>
+        <span class="px-3 py-1 rounded-full text-sm font-semibold ${data.direction === 'bullish' ? 'bg-green-900 text-green-400' : data.direction === 'bearish' ? 'bg-red-900 text-red-400' : 'bg-gray-800 text-gray-400'}">${data.direction.toUpperCase()}</span>
+      </div>
+      <p class="text-sm text-gray-400 mb-2">${data.recommendation}</p>
+      <p class="text-sm mb-3">Price: <span class="font-mono">${data.currentPrice}</span></p>
+      <p class="text-xs text-yellow-500 mb-3">${data.volatility.note} (ATR ${data.volatility.atrPercent}%)</p>
+      <div class="space-y-1 text-sm">
+        ${data.breakdown.map(b => `
+          <div class="flex justify-between border-b border-gray-800 pb-1">
+            <span>${b.signal}: ${b.reading}</span>
+            <span class="${b.bias === 'bullish' ? 'text-green-400' : b.bias === 'bearish' ? 'text-red-400' : 'text-gray-500'}">${b.reason}</span>
+          </div>`).join('')}
+      </div>
+    `;
+  } catch (e) {
+    card.innerHTML = `<p class="text-red-400">Error: ${e.message}</p>`;
+  }
+}
+
+async function runBacktest() {
+  const symbol = document.getElementById('symbol').value.trim();
+  const interval = document.getElementById('interval').value;
+  const sl = document.getElementById('sl').value;
+  const tp = document.getElementById('tp').value;
+  const threshold = document.getElementById('threshold').value;
+
+  const card = document.getElementById('backtestCard');
+  card.classList.remove('hidden');
+  document.getElementById('backtestStats').innerHTML = '<p class="text-gray-400 col-span-2">Running backtest...</p>';
+
+  try {
+    const res = await fetch(`${API}/backtest?symbol=${symbol}&interval=${interval}&stopLossPct=${sl}&takeProfitPct=${tp}&entryThreshold=${threshold}&limit=1000`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    document.getElementById('backtestStats').innerHTML = `
+      <div class="text-gray-400">Trades</div><div class="text-right">${data.totalTrades}</div>
+      <div class="text-gray-400">Win Rate</div><div class="text-right">${data.winRate}%</div>
+      <div class="text-gray-400">Avg Win</div><div class="text-right text-green-400">${data.avgWinPct}%</div>
+      <div class="text-gray-400">Avg Loss</div><div class="text-right text-red-400">${data.avgLossPct}%</div>
+      <div class="text-gray-400">Expectancy</div><div class="text-right">${data.expectancyPct}%</div>
+      <div class="text-gray-400">Total Return</div><div class="text-right">${data.totalReturnPct}%</div>
+      <div class="text-gray-400">Max Drawdown</div><div class="text-right text-red-400">${data.maxDrawdownPct}%</div>
+    `;
+  } catch (e) {
+    document.getElementById('backtestStats').innerHTML = `<p class="text-red-400 col-span-2">Error: ${e.message}</p>`;
+  }
+}
+</script>
+</body>
+</html>
