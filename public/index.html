@@ -3,21 +3,23 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Bena analytics</title>
+<title>EliroxPro Analytics</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css"></script>
 <style>
   body { background: #0b0f14; color: #e6edf3; }
   .card { background: #121821; border: 1px solid #1e2733; }
+  .glow-bull { box-shadow: 0 0 20px rgba(34,197,94,0.15); }
+  .glow-bear { box-shadow: 0 0 20px rgba(239,68,68,0.15); }
 </style>
 </head>
 <body class="min-h-screen p-4 max-w-md mx-auto">
 
-  <h1 class="text-2xl font-bold mb-1">BENA SYSTEM</h1>
+  <h1 class="text-2xl font-bold mb-1">EliroxPro</h1>
   <p class="text-sm text-gray-400 mb-4">Transparent analytics. No black box.</p>
 
   <div class="card rounded-xl p-4 mb-4">
-    <label class="text-xs text-gray-400">Symbol</label>
-    <input id="symbol" value="BTCUSDT" class="w-full bg-transparent border border-gray-700 rounded-lg p-2 mt-1 mb-2 text-lg font-mono" />
+    <label class="text-xs text-gray-400">Symbol (e.g. BTC/USDT, EUR/USD)</label>
+    <input id="symbol" value="BTC/USDT" class="w-full bg-transparent border border-gray-700 rounded-lg p-2 mt-1 mb-2 text-lg font-mono" />
     <label class="text-xs text-gray-400">Interval</label>
     <select id="interval" class="w-full bg-[#0b0f14] border border-gray-700 rounded-lg p-2 mt-1">
       <option value="5m">5m</option>
@@ -28,7 +30,16 @@
     <button onclick="getSignal()" class="w-full bg-blue-600 hover:bg-blue-500 rounded-lg py-2 mt-3 font-semibold">Get Signal</button>
   </div>
 
-  <div id="signalCard" class="card rounded-xl p-4 mb-4 hidden"></div>
+  <div id="signalCard" class="card rounded-xl p-4 mb-4 hidden">
+    <div class="flex justify-between items-center mb-2">
+      <span class="text-2xl font-bold" id="scoreVal">--</span>
+      <span id="directionBadge" class="px-3 py-1 rounded-full text-sm font-semibold"></span>
+    </div>
+    <p class="text-sm text-gray-400 mb-2" id="recText"></p>
+    <p class="text-sm mb-2">Price: <span id="priceVal" class="font-mono"></span></p>
+    <p class="text-xs text-yellow-500 mb-3" id="volNote"></p>
+    <div id="breakdownList" class="space-y-1 text-sm"></div>
+  </div>
 
   <div class="card rounded-xl p-4 mb-4">
     <h2 class="font-semibold mb-2">Backtest Strategy</h2>
@@ -119,4 +130,4 @@ async function runBacktest() {
 }
 </script>
 </body>
-</html>
+      </html>
