@@ -1,0 +1,21 @@
+{
+  "name": "eliroxpro",
+  "version": "1.0.0",
+  "description": "Advanced trading analytics + signal + automation platform",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "axios": "^1.7.7",
+    "ws": "^8.18.0",
+    "dotenv": "^16.4.5",
+    "cors": "^2.8.5"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "ISC"
+}
