@@ -35,21 +35,36 @@ async function getCandles(symbol, interval = '15m', limit = 500) {
   const tdInterval = INTERVAL_MAP[interval] || interval;
   const tdSymbol = normalizeSymbol(symbol);
 
-  const { data } = await axios.get(`${BASE_URL}/time_series`, {
-    params: {
-      symbol: tdSymbol,
-      interval: tdInterval,
-      outputsize: Math.min(limit, 5000),
-      apikey: API_KEY,
-      order: 'ASC'
+  let data;
+  try {
+    const response = await axios.get(`${BASE_URL}/time_series`, {
+      params: {
+        symbol: tdSymbol,
+        interval: tdInterval,
+        outputsize: Math.min(limit, 5000),
+        apikey: API_KEY,
+        order: 'ASC'
+      }
+    });
+    data = response.data;
+  } catch (err) {
+    // Twelve Data sometimes returns an actual HTTP error status (400/404/429)
+    // instead of a 200 with {status:'error'} — axios's default message hides
+    // the real reason ("Request failed with status code 404" tells you
+    // nothing). Surface whatever Twelve Data actually said instead.
+    const apiMessage = err.response?.data?.message || err.response?.data?.code || null;
+    const status = err.response?.status;
+    if (status === 429) {
+      throw new Error(`Twelve Data rate limit hit (429) for ${tdSymbol}/${tdInterval} — free tier allows 8 requests/min, 800/day. Wait a minute and retry, or reduce how many symbols/intervals you're checking at once.`);
     }
-  });
+    throw new Error(`Twelve Data request failed for ${tdSymbol}/${tdInterval} (HTTP ${status || 'unknown'})${apiMessage ? ': ' + apiMessage : ' — no further detail returned.'}`);
+  }
 
   if (data.status === 'error') {
-    throw new Error(`Twelve Data error: ${data.message}`);
+    throw new Error(`Twelve Data error for ${tdSymbol}/${tdInterval}: ${data.message}`);
   }
   if (!data.values) {
-    throw new Error('No candle data returned — check symbol format (e.g. BTC/USDT, EUR/USD).');
+    throw new Error(`No candle data returned for ${tdSymbol}/${tdInterval} — check symbol format (e.g. BTC/USDT, EUR/USD) or that this pair exists on Twelve Data's free tier.`);
   }
 
   return data.values.map(v => ({
