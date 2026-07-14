@@ -58,9 +58,62 @@
     <button onclick="runBacktest()" class="w-full bg-purple-600 hover:bg-purple-500 rounded-lg py-2 font-semibold">Run Backtest</button>
   </div>
 
-  <div id="backtestCard" class="card rounded-xl p-4 mb-8 hidden">
+  <div id="backtestCard" class="card rounded-xl p-4 mb-4 hidden">
     <h3 class="font-semibold mb-2">Results</h3>
     <div class="grid grid-cols-2 gap-2 text-sm" id="backtestStats"></div>
+  </div>
+
+  <div class="card rounded-xl p-4 mb-4">
+    <h2 class="font-semibold mb-2">ML Multi-Currency Scan</h2>
+    <p class="text-xs text-gray-400 mb-2">Trains on first 70% of ~3000 candles per pair, tests strictly on the untouched last 30%. Honest out-of-sample numbers only.</p>
+    <label class="text-xs text-gray-400">Symbols (comma-separated)</label>
+    <input id="scanSymbols" value="BTC/USDT,ETH/USDT,EUR/USD,GBP/USD,USD/JPY" class="w-full bg-transparent border border-gray-700 rounded-lg p-2 mt-1 mb-2 text-sm font-mono" />
+    <label class="text-xs text-gray-400">Interval</label>
+    <select id="scanInterval" class="w-full bg-[#0b0f14] border border-gray-700 rounded-lg p-2 mt-1 mb-2">
+      <option value="15m">15m</option>
+      <option value="1h" selected>1h</option>
+      <option value="4h">4h</option>
+    </select>
+    <button onclick="runMlScan()" class="w-full bg-green-700 hover:bg-green-600 rounded-lg py-2 font-semibold">Run ML Scan</button>
+  </div>
+
+  <div id="scanCard" class="card rounded-xl p-4 mb-4 hidden">
+    <h3 class="font-semibold mb-2">Scan Results (sorted by edge)</h3>
+    <div id="scanResults" class="space-y-3 text-sm"></div>
+  </div>
+
+  <div class="card rounded-xl p-4 mb-4">
+    <h2 class="font-semibold mb-2">Strategy Search (1000 combinations)</h2>
+    <p class="text-xs text-gray-400 mb-2">Screens 1000 parameter combinations (horizon × target % × model type × threshold), corrects for false discoveries, deep-validates survivors. Runs in background — can take a few minutes.</p>
+    <label class="text-xs text-gray-400">Symbol</label>
+    <input id="searchSymbol" value="BTC/USDT" class="w-full bg-transparent border border-gray-700 rounded-lg p-2 mt-1 mb-2 text-sm font-mono" />
+    <label class="text-xs text-gray-400">Interval</label>
+    <select id="searchInterval" class="w-full bg-[#0b0f14] border border-gray-700 rounded-lg p-2 mt-1 mb-2">
+      <option value="15m">15m</option>
+      <option value="1h" selected>1h</option>
+      <option value="4h">4h</option>
+    </select>
+    <button onclick="startStrategySearch()" class="w-full bg-orange-700 hover:bg-orange-600 rounded-lg py-2 font-semibold">Start Search</button>
+  </div>
+
+  <div id="searchCard" class="card rounded-xl p-4 mb-8 hidden">
+    <h3 class="font-semibold mb-2">Search Progress / Results</h3>
+    <div id="searchResults" class="space-y-3 text-sm"></div>
+  </div>
+
+  <div class="card rounded-xl p-4 mb-4">
+    <h2 class="font-semibold mb-2">Stat Arb (Pairs Trading)</h2>
+    <p class="text-xs text-gray-400 mb-2">Trades the SPREAD between two correlated assets reverting to its mean — different mechanism than everything above. Gated by a stationarity test: refuses to trade pairs that aren't genuinely mean-reverting.</p>
+    <label class="text-xs text-gray-400">Symbol A</label>
+    <input id="statArbA" value="BTC/USDT" class="w-full bg-transparent border border-gray-700 rounded-lg p-2 mt-1 mb-2 text-sm font-mono" />
+    <label class="text-xs text-gray-400">Symbol B</label>
+    <input id="statArbB" value="ETH/USDT" class="w-full bg-transparent border border-gray-700 rounded-lg p-2 mt-1 mb-2 text-sm font-mono" />
+    <button onclick="runStatArbCheck()" class="w-full bg-pink-700 hover:bg-pink-600 rounded-lg py-2 font-semibold">Run Stat Arb Backtest</button>
+  </div>
+
+  <div id="statArbCard" class="card rounded-xl p-4 mb-8 hidden">
+    <h3 class="font-semibold mb-2">Stat Arb Results</h3>
+    <div id="statArbResults" class="text-sm"></div>
   </div>
 
 <script>
@@ -128,6 +181,156 @@ async function runBacktest() {
     document.getElementById('backtestStats').innerHTML = `<p class="text-red-400 col-span-2">Error: ${e.message}</p>`;
   }
 }
+
+async function runMlScan() {
+  const symbols = document.getElementById('scanSymbols').value.trim();
+  const interval = document.getElementById('scanInterval').value;
+  const card = document.getElementById('scanCard');
+  card.classList.remove('hidden');
+  document.getElementById('scanResults').innerHTML = '<p class="text-gray-400">Training and testing models per symbol — this can take 15-30s...</p>';
+
+  try {
+    const res = await fetch(`${API}/ml-scan?symbols=${encodeURIComponent(symbols)}&interval=${interval}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    document.getElementById('scanResults').innerHTML = data.results.map(r => {
+      if (r.error) return `<div class="border-b border-gray-800 pb-2"><span class="font-mono">${r.symbol}</span>: <span class="text-red-400">${r.error}</span></div>`;
+      const goodEdge = r.verdict.startsWith('defensible');
+      const edgeColor = goodEdge ? 'text-green-400' : 'text-gray-400';
+      return `
+        <div class="border-b border-gray-800 pb-3">
+          <div class="flex justify-between mb-1">
+            <span class="font-mono font-semibold">${r.symbol}</span>
+            <span class="${edgeColor} text-xs">${r.verdict}</span>
+          </div>
+          <pre class="text-xs text-gray-400 whitespace-pre-wrap font-sans">${r.professorReport}</pre>
+        </div>`;
+    }).join('');
+  } catch (e) {
+    document.getElementById('scanResults').innerHTML = `<p class="text-red-400">Error: ${e.message}</p>`;
+  }
+}
+
+async function startStrategySearch() {
+  const symbol = document.getElementById('searchSymbol').value.trim();
+  const interval = document.getElementById('searchInterval').value;
+  const card = document.getElementById('searchCard');
+  card.classList.remove('hidden');
+  document.getElementById('searchResults').innerHTML = '<p class="text-gray-400">Starting search...</p>';
+
+  try {
+    const startRes = await fetch(`${API}/strategy-search/start?symbol=${encodeURIComponent(symbol)}&interval=${interval}`, { method: 'POST' });
+    const startData = await startRes.json();
+    if (startData.error) throw new Error(startData.error);
+    pollSearchJob(startData.jobId);
+  } catch (e) {
+    document.getElementById('searchResults').innerHTML = `<p class="text-red-400">Error: ${e.message}</p>`;
+  }
+}
+
+async function pollSearchJob(jobId) {
+  const resultsDiv = document.getElementById('searchResults');
+  const poll = async () => {
+    try {
+      const res = await fetch(`${API}/strategy-search/${jobId}`);
+      const job = await res.json();
+      if (job.error) throw new Error(job.error);
+
+      if (job.status === 'running') {
+        const pct = job.total ? Math.round((job.progress / job.total) * 100) : 0;
+        resultsDiv.innerHTML = `<p class="text-gray-400">Running... ${pct}% (${job.progress}/${job.total})</p>`;
+        setTimeout(poll, 3000);
+        return;
+      }
+      if (job.status === 'error') {
+        resultsDiv.innerHTML = `<p class="text-red-400">Search failed: ${job.error}</p>`;
+        return;
+      }
+
+      const r = job.result;
+      let html = `<p class="text-sm text-gray-300 mb-3">${r.honestSummary}</p>`;
+      if (r.paperTrade2.length > 0) {
+        html += `<p class="text-green-400 font-semibold mb-2">Paper-trade candidates (top 2):</p>`;
+        html += r.paperTrade2.map(c => `<pre class="text-xs text-gray-300 whitespace-pre-wrap font-sans border-l-2 border-green-600 pl-2 mb-3">${c.professorReport}</pre>`).join('');
+      }
+      html += `<p class="text-gray-400 font-semibold mt-3 mb-2">Full top 10:</p>`;
+      html += r.top10.map((s, i) => `
+        <div class="text-xs border-b border-gray-800 pb-2 mb-2">
+          <span class="font-mono">#${i+1} strategy_${s.strategyId}</span> —
+          <span class="${s.verdict.startsWith('defensible') ? 'text-green-400' : 'text-gray-500'}">${s.verdict}</span>
+          (edge: ${s.edgeOverBaseline > 0 ? '+' : ''}${s.edgeOverBaseline}%)
+        </div>`).join('');
+
+      if (r.paperTrade2.length > 0) {
+        html += `<button onclick="checkPaperTrade('${jobId}',0)" class="w-full bg-teal-700 hover:bg-teal-600 rounded-lg py-2 font-semibold mt-3">Check Paper Trade #1 Now</button>`;
+        html += `<div id="paperTrade0Result" class="text-xs mt-2"></div>`;
+        if (r.paperTrade2.length > 1) {
+          html += `<button onclick="checkPaperTrade('${jobId}',1)" class="w-full bg-teal-700 hover:bg-teal-600 rounded-lg py-2 font-semibold mt-2">Check Paper Trade #2 Now</button>`;
+          html += `<div id="paperTrade1Result" class="text-xs mt-2"></div>`;
+        }
+      }
+
+      resultsDiv.innerHTML = html;
+    } catch (e) {
+      resultsDiv.innerHTML = `<p class="text-red-400">Error polling job: ${e.message}</p>`;
+    }
+  };
+  poll();
+}
+
+async function checkPaperTrade(jobId, idx) {
+  const div = document.getElementById(`paperTrade${idx}Result`);
+  div.innerHTML = '<p class="text-gray-400">Checking live signal...</p>';
+  try {
+    const res = await fetch(`${API}/paper-trade/check?jobId=${jobId}&candidateIndex=${idx}`, { method: 'POST' });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    div.innerHTML = `
+      <p>Signal: <span class="${data.currentSignal === 'long' ? 'text-green-400' : 'text-gray-400'}">${data.currentSignal}</span> (prob ${data.signalProbability})</p>
+      <p>Price: ${data.currentPrice}</p>
+      <p class="text-yellow-400">Capital: $${data.capital} (started $${data.startingCapital}, ${data.totalReturnPct > 0 ? '+' : ''}${data.totalReturnPct}%)</p>
+      ${data.openTrade ? `
+        <div class="border-l-2 border-yellow-600 pl-2 mt-1">
+          <p>Open position: $${data.openTrade.positionSizeDollars} (${data.openTrade.positionSizeUnits} units) @ ${data.openTrade.entryPrice}</p>
+          <p>Stop: ${data.openTrade.stopLossPrice} | Target: ${data.openTrade.takeProfitPrice}</p>
+          <p>Risking: $${data.openTrade.riskAmountDollars} (${data.openTrade.riskPctOfCapital}% of capital)</p>
+        </div>` : ''}
+      <p class="mt-1">History: ${data.summary.totalTrades} closed trades, ${data.summary.winRate ?? '--'}% win rate, $${data.summary.totalPnlDollars} total P&L</p>
+    `;
+  } catch (e) {
+    div.innerHTML = `<p class="text-red-400">Error: ${e.message}</p>`;
+  }
+}
+
+async function runStatArbCheck() {
+  const symbolA = document.getElementById('statArbA').value.trim();
+  const symbolB = document.getElementById('statArbB').value.trim();
+  const card = document.getElementById('statArbCard');
+  card.classList.remove('hidden');
+  const div = document.getElementById('statArbResults');
+  div.innerHTML = '<p class="text-gray-400">Testing stationarity and backtesting...</p>';
+
+  try {
+    const res = await fetch(`${API}/stat-arb?symbolA=${encodeURIComponent(symbolA)}&symbolB=${encodeURIComponent(symbolB)}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    div.innerHTML = `
+      <p class="mb-2 ${data.stationarity.isStationary ? 'text-green-400' : 'text-red-400'}">${data.stationarity.interpretation} (t-stat ${data.stationarity.tStat} vs ${data.stationarity.criticalValue})</p>
+      <p class="text-gray-300">${data.verdict}</p>
+      ${data.totalTrades > 0 ? `
+        <div class="grid grid-cols-2 gap-2 mt-2 text-xs">
+          <div class="text-gray-400">Trades</div><div class="text-right">${data.totalTrades}</div>
+          <div class="text-gray-400">Win Rate</div><div class="text-right">${data.winRate}%</div>
+          <div class="text-gray-400">Total Return</div><div class="text-right">${data.totalReturnPct}%</div>
+        </div>` : ''}
+    `;
+  } catch (e) {
+    div.innerHTML = `<p class="text-red-400">Error: ${e.message}</p>`;
+  }
+}
 </script>
 </body>
-      </html>
+</html>

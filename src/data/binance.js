@@ -2,6 +2,12 @@ const axios = require('axios');
 
 const BASE_URL = 'https://api.binance.com';
 
+/**
+ * Fetch OHLCV candles for a symbol/interval.
+ * @param {string} symbol e.g. 'BTCUSDT'
+ * @param {string} interval e.g. '1m','5m','15m','1h','4h','1d'
+ * @param {number} limit max 1000
+ */
 async function getCandles(symbol, interval = '15m', limit = 500) {
   const url = `${BASE_URL}/api/v3/klines`;
   const { data } = await axios.get(url, {
@@ -19,12 +25,18 @@ async function getCandles(symbol, interval = '15m', limit = 500) {
   }));
 }
 
+/**
+ * Get current price ticker for a symbol.
+ */
 async function getPrice(symbol) {
   const url = `${BASE_URL}/api/v3/ticker/price`;
   const { data } = await axios.get(url, { params: { symbol: symbol.toUpperCase() } });
   return parseFloat(data.price);
 }
 
+/**
+ * 24hr rolling stats — useful for volatility regime detection.
+ */
 async function get24hStats(symbol) {
   const url = `${BASE_URL}/api/v3/ticker/24hr`;
   const { data } = await axios.get(url, { params: { symbol: symbol.toUpperCase() } });
