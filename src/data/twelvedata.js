@@ -15,7 +15,17 @@ const INTERVAL_MAP = {
  * If the user already typed it with a slash, leave it alone.
  */
 function normalizeSymbol(raw) {
-  const s = raw.toUpperCase().trim();
+  let s = raw.toUpperCase().trim();
+
+  // Defensive fix: if a slash arrived double-encoded somewhere in the
+  // request chain (browser -> our server -> here), it shows up as a
+  // literal "%2F" instead of "/", which produces a mangled symbol Twelve
+  // Data rejects as invalid. Decoding here catches that regardless of
+  // where exactly the double-encoding happened.
+  if (s.includes('%2F') || s.includes('%2C')) {
+    try { s = decodeURIComponent(s); } catch (e) { /* leave as-is if not valid encoding */ }
+  }
+
   if (s.includes('/')) return s;
 
   const quoteCandidates = ['USDT', 'USD', 'EUR', 'GBP', 'JPY', 'BTC', 'ETH'];
