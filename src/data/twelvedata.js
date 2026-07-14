@@ -38,7 +38,7 @@ function normalizeSymbol(raw) {
   return `${s.slice(0, -3)}/${s.slice(-3)}`;
 }
 
-async function getCandles(symbol, interval = '15m', limit = 500) {
+async function getCandles(symbol, interval = '15m', limit = 500, _isRetry = false) {
   if (!API_KEY) {
     throw new Error('TWELVE_DATA_API_KEY is not set. Add it in Render → Environment.');
   }
@@ -58,12 +58,18 @@ async function getCandles(symbol, interval = '15m', limit = 500) {
     });
     data = response.data;
   } catch (err) {
-    // Twelve Data sometimes returns an actual HTTP error status (400/404/429)
-    // instead of a 200 with {status:'error'} — axios's default message hides
-    // the real reason ("Request failed with status code 404" tells you
-    // nothing). Surface whatever Twelve Data actually said instead.
     const apiMessage = err.response?.data?.message || err.response?.data?.code || null;
     const status = err.response?.status;
+
+    // Self-correcting fallback: Twelve Data's free tier appears to reject
+    // some /USDT pairs while accepting the equivalent /USD pair. Rather
+    // than fail outright, retry once with USD substituted before giving up.
+    if (!_isRetry && tdSymbol.endsWith('/USDT') && status === 404) {
+      const usdSymbol = tdSymbol.replace('/USDT', '/USD');
+      console.warn(`${tdSymbol} rejected by Twelve Data, retrying as ${usdSymbol}...`);
+      return getCandles(usdSymbol, interval, limit, true);
+    }
+
     if (status === 429) {
       throw new Error(`Twelve Data rate limit hit (429) for ${tdSymbol}/${tdInterval} — free tier allows 8 requests/min, 800/day. Wait a minute and retry, or reduce how many symbols/intervals you're checking at once.`);
     }
