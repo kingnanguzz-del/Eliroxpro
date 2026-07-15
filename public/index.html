@@ -303,9 +303,13 @@ async function pollSearchJob(jobId) {
       if (r.paperTrade2.length > 0) {
         html += `<button onclick="checkPaperTrade('${jobId}',0)" class="w-full bg-teal-700 hover:bg-teal-600 rounded-lg py-2 font-semibold mt-3">Check Paper Trade #1 Now</button>`;
         html += `<div id="paperTrade0Result" class="text-xs mt-2"></div>`;
+        html += `<button onclick="checkLiveTrade('${jobId}',0)" class="w-full bg-indigo-700 hover:bg-indigo-600 rounded-lg py-2 font-semibold mt-2">Test on Binance Testnet #1</button>`;
+        html += `<div id="liveTrade0Result" class="text-xs mt-2"></div>`;
         if (r.paperTrade2.length > 1) {
           html += `<button onclick="checkPaperTrade('${jobId}',1)" class="w-full bg-teal-700 hover:bg-teal-600 rounded-lg py-2 font-semibold mt-2">Check Paper Trade #2 Now</button>`;
           html += `<div id="paperTrade1Result" class="text-xs mt-2"></div>`;
+          html += `<button onclick="checkLiveTrade('${jobId}',1)" class="w-full bg-indigo-700 hover:bg-indigo-600 rounded-lg py-2 font-semibold mt-2">Test on Binance Testnet #2</button>`;
+          html += `<div id="liveTrade1Result" class="text-xs mt-2"></div>`;
         }
       }
 
@@ -364,6 +368,28 @@ async function runStatArbCheck() {
           <div class="text-gray-400">Win Rate</div><div class="text-right">${data.winRate}%</div>
           <div class="text-gray-400">Total Return</div><div class="text-right">${data.totalReturnPct}%</div>
         </div>` : ''}
+    `;
+  } catch (e) {
+    div.innerHTML = `<p class="text-red-400">Error: ${e.message}</p>`;
+  }
+}
+
+async function checkLiveTrade(jobId, idx) {
+  const div = document.getElementById(`liveTrade${idx}Result`);
+  div.innerHTML = '<p class="text-gray-400">Checking against Binance testnet...</p>';
+  try {
+    const res = await fetch(`${API}/live-trade/check?jobId=${jobId}&candidateIndex=${idx}&capital=100`, { method: 'POST' });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    div.innerHTML = `
+      <p class="${data.isTestnet ? 'text-blue-400' : 'text-red-500 font-bold'}">${data.isTestnet ? 'TESTNET (fake funds)' : 'LIVE — REAL MONEY'} | Trading enabled: ${data.liveTradingEnabled}</p>
+      <p>Signal: <span class="${data.currentSignal === 'long' ? 'text-green-400' : 'text-gray-400'}">${data.currentSignal}</span> (prob ${data.signalProbability})</p>
+      <p>Price: ${data.currentPrice}</p>
+      ${data.learning ? `<p class="text-xs text-gray-500">Learning: ${data.learning.usingLearnedModel ? 'using updated model' : 'original model'}, ${data.learning.realTradesLogged} real trades logged, trust ${data.learning.trustMultiplier}x</p>` : ''}
+      ${data.openPosition ? `<p class="text-yellow-400">Open: $${data.openPosition.positionSizeDollars} @ ${data.openPosition.entryPrice}</p>` : ''}
+      ${data.actions.length > 0 ? data.actions.map(a => `<p class="text-indigo-300">${a.type}${a.dryRun ? ' (dry run — not enabled)' : ''}</p>`).join('') : '<p class="text-gray-500">No action this check.</p>'}
+      <p class="mt-1">Closed trades: ${data.closedTrades.length}</p>
     `;
   } catch (e) {
     div.innerHTML = `<p class="text-red-400">Error: ${e.message}</p>`;
