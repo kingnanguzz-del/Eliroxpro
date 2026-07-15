@@ -253,7 +253,7 @@ async function loadLeaderboard() {
     const res = await fetch(`${API}/leaderboard`);
     const data = await res.json();
     if (data.topStrategies.length === 0) {
-      div.innerHTML = '<p class="text-gray-400">No strategies have passed full validation yet across any search — that\\'s an honest result, not a bug.</p>';
+      div.innerHTML = '<p class="text-gray-400">No strategies have passed full validation yet across any search — that is an honest result, not a bug.</p>';
       return;
     }
     div.innerHTML = data.topStrategies.map((s, i) => `
