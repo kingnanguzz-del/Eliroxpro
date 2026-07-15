@@ -120,11 +120,22 @@ function deepValidate(candles, strategy, newsFlags, carryDifferential, fundingRa
  * deep-validate survivors, return top 10 with top 2 flagged for paper trading.
  */
 async function searchStrategies(symbol, interval = '1h', opts = {}) {
-  const { candleCount = 3000, fdrLevel = 0.05, onProgress = null } = opts;
+  const { candleCount = 3000, fdrLevel = 0.05, onProgress = null, useBulkHistory = false, yearsBack = 5 } = opts;
 
-  const candles = await marketData.getCandles(symbol, interval, candleCount);
+  let candles;
+  if (useBulkHistory) {
+    // Pulls years of data from Binance's free bulk archive — no rate limits,
+    // no per-request friction, cached locally after the first download.
+    const { getBulkHistory } = require('../data/bulk/bulkDataLoader');
+    candles = await getBulkHistory(symbol, interval, yearsBack, (done, total) => {
+      if (onProgress) onProgress(done, total, 'downloading_bulk_history');
+    });
+  } else {
+    candles = await marketData.getCandles(symbol, interval, candleCount);
+  }
+
   if (candles.length < 300) {
-    throw new Error(`Not enough data for ${symbol} (${candles.length} candles).`);
+    throw new Error(`Not enough data for ${symbol} (${candles.length} candles). ${useBulkHistory ? 'Bulk archive may not cover this symbol/interval — try a major pair like BTC/USDT.' : ''}`);
   }
 
   const firstTime = new Date(candles[0].closeTime).toISOString().slice(0, 10);
@@ -177,6 +188,16 @@ async function searchStrategies(symbol, interval = '1h', opts = {}) {
   const top10 = validated.slice(0, 10);
   const qualifying = top10.filter(r => r.verdict.startsWith('defensible'));
   const paperTradeCandidates = qualifying.slice(0, 2);           // "trade best 2"
+
+  // Persistent leaderboard: every genuinely-validated result gets submitted.
+  // This is what "maintaining previous winning ones" actually means — good
+  // strategies accumulate here across every search you ever run, not just
+  // this one, and are never silently discarded by a later run.
+  const { considerCandidate } = require('./strategyLeaderboard');
+  const leaderboardUpdates = validated.map(r => ({
+    strategyId: r.strategyId,
+    ...considerCandidate(symbol, interval, r)
+  })).filter(u => u.accepted);
   const suggested = top10
     .filter(r => !paperTradeCandidates.includes(r))
     .slice(0, 8);                                                 // "suggest 8"
@@ -184,9 +205,11 @@ async function searchStrategies(symbol, interval = '1h', opts = {}) {
   return {
     symbol,
     interval,
+    dataSource: useBulkHistory ? `bulk_historical (${yearsBack} years, ${candles.length} candles)` : `live_api (${candles.length} candles)`,
     totalStrategiesTested: strategies.length,
     survivedFDRCorrection: usedFallback ? 0 : shortlist.length,
     usedFallbackRanking: usedFallback,
+    leaderboardUpdates,
     top10,
     suggested8: suggested,
     paperTrade2: paperTradeCandidates,

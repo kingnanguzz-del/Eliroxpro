@@ -94,15 +94,18 @@ router.get('/ml-scan', async (req, res) => {
   }
 });
 
-// POST /api/strategy-search/start?symbol=BTC/USDT&interval=1h&candleCount=3000
-// Runs ~1000 strategies in the background (can take a few minutes). Returns
+// POST /api/strategy-search/start?symbol=BTC/USDT&interval=1h&candleCount=3000&useBulkHistory=true&yearsBack=5
+// Runs ~1000 strategies in the background (can take a few minutes, longer
+// with bulk history since it downloads real files on first run). Returns
 // a jobId immediately instead of blocking — poll /strategy-search/:jobId.
 router.post('/strategy-search/start', (req, res) => {
-  const { symbol = 'BTC/USDT', interval = '1h', candleCount = 3000 } = req.query;
+  const { symbol = 'BTC/USDT', interval = '1h', candleCount = 3000, useBulkHistory = 'false', yearsBack = 5 } = req.query;
   const jobId = createJob();
 
   searchStrategies(symbol, interval, {
     candleCount: Number(candleCount),
+    useBulkHistory: useBulkHistory === 'true',
+    yearsBack: Number(yearsBack),
     onProgress: (i, total, stage) => updateProgress(jobId, i, total)
   })
     .then(result => completeJob(jobId, result))
@@ -207,3 +210,9 @@ router.post('/live-trade/check', async (req, res) => {
 });
 
 module.exports = router;
+
+// GET /api/leaderboard - view all permanently-validated strategies across every search ever run
+router.get('/leaderboard', (req, res) => {
+  const { getTopStrategies } = require('../strategy/strategyLeaderboard');
+  res.json({ topStrategies: getTopStrategies(20) });
+});

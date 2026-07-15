@@ -93,12 +93,25 @@
       <option value="1h" selected>1h</option>
       <option value="4h">4h</option>
     </select>
+    <label class="flex items-center gap-2 text-xs text-gray-400 mb-2">
+      <input type="checkbox" id="useBulkHistory" />
+      Use bulk historical data (years, not just recent candles — slower first run, no rate limits)
+    </label>
+    <label class="text-xs text-gray-400">Years back (if using bulk history)</label>
+    <input id="yearsBack" value="5" type="number" min="1" max="10" class="w-full bg-transparent border border-gray-700 rounded-lg p-2 mt-1 mb-2" />
     <button onclick="startStrategySearch()" class="w-full bg-orange-700 hover:bg-orange-600 rounded-lg py-2 font-semibold">Start Search</button>
   </div>
 
-  <div id="searchCard" class="card rounded-xl p-4 mb-8 hidden">
+  <div id="searchCard" class="card rounded-xl p-4 mb-4 hidden">
     <h3 class="font-semibold mb-2">Search Progress / Results</h3>
     <div id="searchResults" class="space-y-3 text-sm"></div>
+  </div>
+
+  <div class="card rounded-xl p-4 mb-8">
+    <h2 class="font-semibold mb-2">Strategy Leaderboard</h2>
+    <p class="text-xs text-gray-400 mb-2">Every strategy that has EVER passed full validation, across every search you've run — never silently overwritten, only replaced by something genuinely better.</p>
+    <button onclick="loadLeaderboard()" class="w-full bg-indigo-700 hover:bg-indigo-600 rounded-lg py-2 font-semibold">View Leaderboard</button>
+    <div id="leaderboardResults" class="space-y-2 text-xs mt-3"></div>
   </div>
 
   <div class="card rounded-xl p-4 mb-4">
@@ -215,17 +228,42 @@ async function runMlScan() {
 async function startStrategySearch() {
   const symbol = document.getElementById('searchSymbol').value.trim();
   const interval = document.getElementById('searchInterval').value;
+  const useBulkHistory = document.getElementById('useBulkHistory').checked;
+  const yearsBack = document.getElementById('yearsBack').value;
   const card = document.getElementById('searchCard');
   card.classList.remove('hidden');
-  document.getElementById('searchResults').innerHTML = '<p class="text-gray-400">Starting search...</p>';
+  document.getElementById('searchResults').innerHTML = useBulkHistory
+    ? '<p class="text-gray-400">Starting search — first run with bulk history downloads real files and can take several minutes...</p>'
+    : '<p class="text-gray-400">Starting search...</p>';
 
   try {
-    const startRes = await fetch(`${API}/strategy-search/start?symbol=${encodeURIComponent(symbol)}&interval=${interval}`, { method: 'POST' });
+    const startRes = await fetch(`${API}/strategy-search/start?symbol=${encodeURIComponent(symbol)}&interval=${interval}&useBulkHistory=${useBulkHistory}&yearsBack=${yearsBack}`, { method: 'POST' });
     const startData = await startRes.json();
     if (startData.error) throw new Error(startData.error);
     pollSearchJob(startData.jobId);
   } catch (e) {
     document.getElementById('searchResults').innerHTML = `<p class="text-red-400">Error: ${e.message}</p>`;
+  }
+}
+
+async function loadLeaderboard() {
+  const div = document.getElementById('leaderboardResults');
+  div.innerHTML = '<p class="text-gray-400">Loading...</p>';
+  try {
+    const res = await fetch(`${API}/leaderboard`);
+    const data = await res.json();
+    if (data.topStrategies.length === 0) {
+      div.innerHTML = '<p class="text-gray-400">No strategies have passed full validation yet across any search — that\\'s an honest result, not a bug.</p>';
+      return;
+    }
+    div.innerHTML = data.topStrategies.map((s, i) => `
+      <div class="border-b border-gray-800 pb-2">
+        <span class="font-mono">#${i+1} ${s.symbol} ${s.interval}</span> —
+        <span class="text-green-400">edge +${s.edgeOverBaseline}%</span>
+        (p=${s.significance.pValue}, validated ${new Date(s.validatedAt).toLocaleDateString()})
+      </div>`).join('');
+  } catch (e) {
+    div.innerHTML = `<p class="text-red-400">Error: ${e.message}</p>`;
   }
 }
 
