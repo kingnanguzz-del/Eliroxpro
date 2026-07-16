@@ -11,6 +11,8 @@ const { logSnapshot, getMemoryStats } = require('./memoryStore');
 const { calculatePositionSize } = require('./riskManagement');
 const { incrementalUpdate, computeTrustMultiplier } = require('../ml/onlineLearning');
 const persistentStore = require('../data/persistentStore');
+const { classifyRegimes } = require('./regimeDetection');
+const { selectAppropriateAgents } = require('./agentCoordinator');
 
 /**
  * Returns the model state to actually use: a persisted, incrementally-
@@ -256,11 +258,17 @@ async function checkAndUpdate(symbol, strategyResult, opts = {}) {
 
       // Log this outcome permanently — this is the "remembering patterns"
       // dataset that the trust multiplier and future analysis draw from.
+      // Tagging with regime lets the coordinator later ask "did this
+      // strategy actually work in trending markets specifically," not
+      // just "did it work on average."
+      const regimesAtClose = classifyRegimes(candles);
+      const regimeLabel = regimesAtClose[regimesAtClose.length - 1] || null;
       persistentStore.appendLog(`trades_${symbol}_${strategyResult.strategyId}`, {
         pnlPct: closedRecord.pnlPct,
         pnlDollars: closedRecord.pnlDollars,
         outcome: closedRecord.outcome,
-        wasCautiousOverride: !!entry.openTrade.wasCautiousOverride
+        wasCautiousOverride: !!entry.openTrade.wasCautiousOverride,
+        regimeLabel
       });
 
       entry.openTrade = null;
@@ -370,4 +378,34 @@ function summarizeLedger(closedTrades, startingCapital, currentCapital) {
   };
 }
 
-module.exports = { checkAndUpdate };
+/**
+ * The actual "multi-agent" entrypoint: given a pool of candidate agents
+ * (e.g. paperTrade2 + suggested8 from a strategy search), figures out the
+ * current market regime once, asks the coordinator which agent(s) actually
+ * have standing to act right now, and only runs the full check/trade logic
+ * for those — the rest are reported as explicitly skipped, with reasons,
+ * not silently ignored.
+ */
+async function checkMultiAgent(symbol, agentPool, opts = {}) {
+  const candles = await marketData.getCandles(symbol, '1h', 300);
+  const selection = selectAppropriateAgents(symbol, candles, agentPool, {
+    minEdgeToAct: opts.minEdgeToAct || 3,
+    maxAgentsToActivate: opts.maxAgentsToActivate || 2
+  });
+
+  const activatedResults = [];
+  for (const a of selection.activated) {
+    const result = await checkAndUpdate(symbol, a.agent, opts);
+    activatedResults.push({ ...result, activationReason: a.reason });
+  }
+
+  return {
+    symbol,
+    currentRegime: selection.currentRegime,
+    agentsConsidered: agentPool.length,
+    activated: activatedResults,
+    skipped: selection.rejected.map(r => ({ strategyId: r.agent.strategyId, reason: r.reason }))
+  };
+}
+
+module.exports = { checkAndUpdate, checkMultiAgent };

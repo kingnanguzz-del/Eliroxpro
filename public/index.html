@@ -313,6 +313,9 @@ async function pollSearchJob(jobId) {
         }
       }
 
+      html += `<button onclick="checkMultiAgentNow('${jobId}')" class="w-full bg-orange-600 hover:bg-orange-500 rounded-lg py-2 font-semibold mt-3">Run Multi-Agent Check (regime-aware)</button>`;
+      html += `<div id="multiAgentResult" class="text-xs mt-2"></div>`;
+
       resultsDiv.innerHTML = html;
     } catch (e) {
       resultsDiv.innerHTML = `<p class="text-red-400">Error polling job: ${e.message}</p>`;
@@ -391,6 +394,39 @@ async function checkLiveTrade(jobId, idx) {
       ${data.actions.length > 0 ? data.actions.map(a => `<p class="text-indigo-300">${a.type}${a.dryRun ? ' (dry run — not enabled)' : ''}</p>`).join('') : '<p class="text-gray-500">No action this check.</p>'}
       <p class="mt-1">Closed trades: ${data.closedTrades.length}</p>
     `;
+  } catch (e) {
+    div.innerHTML = `<p class="text-red-400">Error: ${e.message}</p>`;
+  }
+}
+
+async function checkMultiAgentNow(jobId) {
+  const div = document.getElementById('multiAgentResult');
+  div.innerHTML = '<p class="text-gray-400">Detecting current market regime and selecting appropriate agent(s)...</p>';
+  try {
+    const res = await fetch(`${API}/multi-agent/check?jobId=${jobId}`, { method: 'POST' });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    let html = `<p class="text-orange-400 font-semibold">Current regime: ${data.currentRegime || 'unknown'}</p>`;
+    html += `<p class="text-gray-400 text-xs mb-2">${data.agentsConsidered} agents considered</p>`;
+
+    if (data.activated.length === 0) {
+      html += `<p class="text-gray-500">No agent activated — none showed a genuine edge in this specific regime right now. This is the coordinator correctly declining to force a trade.</p>`;
+    } else {
+      html += `<p class="text-green-400 font-semibold mb-1">Activated:</p>`;
+      html += data.activated.map(a => `
+        <div class="border-l-2 border-green-600 pl-2 mb-2">
+          <p class="text-xs text-gray-400">${a.activationReason}</p>
+          <p>Signal: ${a.currentSignal} (prob ${a.signalProbability}) | Capital: $${a.capital}</p>
+        </div>`).join('');
+    }
+
+    if (data.skipped.length > 0) {
+      html += `<p class="text-gray-500 font-semibold mt-2 mb-1">Skipped (${data.skipped.length}):</p>`;
+      html += data.skipped.map(s => `<p class="text-xs text-gray-600">strategy_${s.strategyId}: ${s.reason}</p>`).join('');
+    }
+
+    div.innerHTML = html;
   } catch (e) {
     div.innerHTML = `<p class="text-red-400">Error: ${e.message}</p>`;
   }

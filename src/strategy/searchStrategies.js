@@ -54,6 +54,8 @@ function quickScreen(datasetsByKey, strategy) {
  * earlier, but only run on the shortlist that survived FDR correction.
  * This is what actually decides "best 2."
  */
+const { classifyRegimes } = require('./regimeDetection');
+
 function deepValidate(candles, strategy, newsFlags, carryDifferential, fundingRateHistory) {
   const dataset = buildDataset(candles, {
     horizon: strategy.horizon,
@@ -62,11 +64,18 @@ function deepValidate(candles, strategy, newsFlags, carryDifferential, fundingRa
     carryDifferential,
     fundingRateHistory
   });
+  const regimes = classifyRegimes(candles);
 
   const numFolds = 5;
   const foldSize = Math.floor(dataset.length / (numFolds + 1));
   const foldResults = [];
   let lastModel = null;
+
+  // Per-regime tracking: instead of one blended accuracy number, we record
+  // every prediction alongside the regime it happened in, so we can later
+  // answer "does this strategy actually work in trending markets, or only
+  // in the overall average that happens to include both good and bad fits."
+  const regimePredictions = {}; // regimeLabel -> [{predicted, actual}]
 
   for (let k = 1; k <= numFolds; k++) {
     const trainEnd = foldSize * k;
@@ -81,9 +90,34 @@ function deepValidate(candles, strategy, newsFlags, carryDifferential, fundingRa
     const testEval = model.evaluate(testSet, strategy.decisionThreshold);
     foldResults.push({ testPerformance: testEval });
     lastModel = model;
+
+    for (const row of testSet) {
+      const regimeLabel = regimes[row.index];
+      if (!regimeLabel) continue;
+      const predicted = model.predictProba(row.features) >= strategy.decisionThreshold ? 1 : 0;
+      if (!regimePredictions[regimeLabel]) regimePredictions[regimeLabel] = [];
+      regimePredictions[regimeLabel].push({ predicted, actual: row.label });
+    }
   }
 
   if (foldResults.length < 2) return null;
+
+  // Collapse each regime's predictions into an accuracy-vs-baseline edge,
+  // same honest majority-class comparison used everywhere else in this app.
+  const regimePerformance = {};
+  for (const [regimeLabel, preds] of Object.entries(regimePredictions)) {
+    if (preds.length < 15) continue; // too few samples in this regime to trust
+    const correct = preds.filter(p => p.predicted === p.actual).length;
+    const accuracy = (correct / preds.length) * 100;
+    const positiveRate = (preds.filter(p => p.actual === 1).length / preds.length) * 100;
+    const baseline = Math.max(positiveRate, 100 - positiveRate);
+    regimePerformance[regimeLabel] = {
+      sampleSize: preds.length,
+      accuracy: +accuracy.toFixed(1),
+      baseline: +baseline.toFixed(1),
+      edge: +(accuracy - baseline).toFixed(1)
+    };
+  }
 
   const foldSummary = summarizeFolds(foldResults);
   const totalTestSamples = foldResults.reduce((a, f) => a + f.testPerformance.sampleSize, 0);
@@ -107,6 +141,7 @@ function deepValidate(candles, strategy, newsFlags, carryDifferential, fundingRa
     edgeOverBaseline: foldSummary.meanEdge,
     professorReport,
     serializedModel,
+    regimePerformance,
     verdict: significance.significant && foldSummary.consistentAcrossFolds && foldSummary.meanEdge > 3
       ? 'defensible edge — statistically significant and consistent across folds'
       : significance.significant && !foldSummary.consistentAcrossFolds

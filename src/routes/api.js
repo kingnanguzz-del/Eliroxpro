@@ -6,7 +6,7 @@ const { runBacktest } = require('../backtest/engine');
 const { evaluateSymbol, scanSymbols } = require('../ml/trainEvaluate');
 const { searchStrategies } = require('../strategy/searchStrategies');
 const { createJob, updateProgress, completeJob, failJob, getJob } = require('../strategy/jobManager');
-const { checkAndUpdate } = require('../strategy/paperTradeLedger');
+const { checkAndUpdate, checkMultiAgent } = require('../strategy/paperTradeLedger');
 const { checkAndExecute } = require('../execution/liveTrader');
 const { runStatArb } = require('../strategy/statArb');
 
@@ -203,6 +203,32 @@ router.post('/live-trade/check', async (req, res) => {
       return res.status(400).json({ error: 'No paper-trade candidate at that index.' });
     }
     const result = await checkAndExecute(job.result.symbol, candidate, { capital: Number(capital) });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/multi-agent/check?jobId=xxx
+// The real "multi-agent" entrypoint: pools ALL validated candidates from a
+// search (paperTrade2 + suggested8), detects the current market regime,
+// and only activates whichever agent(s) actually have a track record in
+// THIS regime — explicitly reporting which ones were skipped and why.
+router.post('/multi-agent/check', async (req, res) => {
+  try {
+    const { jobId, startingCapital = 500, riskPerTradePct = 1.0 } = req.query;
+    const job = getJob(jobId);
+    if (!job || job.status !== 'done') {
+      return res.status(400).json({ error: 'Job not found or not finished yet.' });
+    }
+    const agentPool = [...job.result.paperTrade2, ...job.result.suggested8];
+    if (agentPool.length === 0) {
+      return res.status(400).json({ error: 'No candidate agents in this search result.' });
+    }
+    const result = await checkMultiAgent(job.result.symbol, agentPool, {
+      startingCapital: Number(startingCapital),
+      riskPerTradePct: Number(riskPerTradePct)
+    });
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
