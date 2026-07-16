@@ -99,7 +99,7 @@ router.get('/ml-scan', async (req, res) => {
 // with bulk history since it downloads real files on first run). Returns
 // a jobId immediately instead of blocking — poll /strategy-search/:jobId.
 router.post('/strategy-search/start', (req, res) => {
-  const { symbol = 'BTC/USDT', interval = '1h', candleCount = 3000, useBulkHistory = 'false', yearsBack = 5 } = req.query;
+  const { symbol = 'BTC/USDT', interval = '1h', candleCount = 3000, useBulkHistory = 'true', yearsBack = 2 } = req.query;
   const jobId = createJob();
 
   searchStrategies(symbol, interval, {

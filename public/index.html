@@ -94,11 +94,11 @@
       <option value="4h">4h</option>
     </select>
     <label class="flex items-center gap-2 text-xs text-gray-400 mb-2">
-      <input type="checkbox" id="useBulkHistory" />
+      <input type="checkbox" id="useBulkHistory" checked />
       Use bulk historical data (years, not just recent candles — slower first run, no rate limits)
     </label>
     <label class="text-xs text-gray-400">Years back (if using bulk history)</label>
-    <input id="yearsBack" value="5" type="number" min="1" max="10" class="w-full bg-transparent border border-gray-700 rounded-lg p-2 mt-1 mb-2" />
+    <input id="yearsBack" value="2" type="number" min="1" max="10" class="w-full bg-transparent border border-gray-700 rounded-lg p-2 mt-1 mb-2" />
     <button onclick="startStrategySearch()" class="w-full bg-orange-700 hover:bg-orange-600 rounded-lg py-2 font-semibold">Start Search</button>
   </div>
 
