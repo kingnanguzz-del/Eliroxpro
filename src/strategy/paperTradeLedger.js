@@ -13,6 +13,7 @@ const { incrementalUpdate, computeTrustMultiplier } = require('../ml/onlineLearn
 const persistentStore = require('../data/persistentStore');
 const { classifyRegimes } = require('./regimeDetection');
 const { selectAppropriateAgents } = require('./agentCoordinator');
+const { analyzeLossPatterns, matchesKnownLossPattern } = require('./lossPatternAnalysis');
 
 /**
  * Returns the model state to actually use: a persisted, incrementally-
@@ -308,29 +309,40 @@ async function checkAndUpdate(symbol, strategyResult, opts = {}) {
       recordVeto(key, currentPrice, now);
     }
   } else if (signal === 'long' && !orderBookConflicts) {
-    const trust = computeTrustMultiplier(persistentStore.getLog(`trades_${symbol}_${strategyResult.strategyId}`));
-    const sizing = calculatePositionSize(candles, {
-      capital: entry.capital,
-      riskPerTradePct: riskPerTradePct * trust.multiplier,
-      atrMultiplierForStop,
-      maxPositionPctOfCapital
-    });
+    // Check the current setup against this strategy's own real past losses
+    // — the honest "learn from mistakes" mechanism: not a promise to avoid
+    // all losses, but a concrete refusal to repeat a specific, evidenced
+    // bad pattern.
+    const lossAnalysis = analyzeLossPatterns(symbol, strategyResult.strategyId);
+    const lossMatch = matchesKnownLossPattern(entryFeatures, lossAnalysis);
 
-    if (!sizing.error) {
-      const takeProfitPrice = currentPrice + (currentPrice - sizing.stopLossPrice) * riskRewardRatio;
-      entry.openTrade = {
-        entryPrice: currentPrice,
-        openedAt: now,
-        signalProbability: +proba.toFixed(3),
-        positionSizeUnits: sizing.positionSizeUnits,
-        positionSizeDollars: sizing.positionSizeDollars,
-        stopLossPrice: sizing.stopLossPrice,
-        takeProfitPrice: +takeProfitPrice.toFixed(4),
-        riskAmountDollars: sizing.riskAmountDollars,
-        riskPctOfCapital: sizing.riskPctOfCapital,
-        capitalAtEntry: entry.capital,
-        entryFeatures
-      };
+    if (lossMatch.matches) {
+      recordVeto(key, currentPrice, now);
+    } else {
+      const trust = computeTrustMultiplier(persistentStore.getLog(`trades_${symbol}_${strategyResult.strategyId}`));
+      const sizing = calculatePositionSize(candles, {
+        capital: entry.capital,
+        riskPerTradePct: riskPerTradePct * trust.multiplier,
+        atrMultiplierForStop,
+        maxPositionPctOfCapital
+      });
+
+      if (!sizing.error) {
+        const takeProfitPrice = currentPrice + (currentPrice - sizing.stopLossPrice) * riskRewardRatio;
+        entry.openTrade = {
+          entryPrice: currentPrice,
+          openedAt: now,
+          signalProbability: +proba.toFixed(3),
+          positionSizeUnits: sizing.positionSizeUnits,
+          positionSizeDollars: sizing.positionSizeDollars,
+          stopLossPrice: sizing.stopLossPrice,
+          takeProfitPrice: +takeProfitPrice.toFixed(4),
+          riskAmountDollars: sizing.riskAmountDollars,
+          riskPctOfCapital: sizing.riskPctOfCapital,
+          capitalAtEntry: entry.capital,
+          entryFeatures
+        };
+      }
     }
   }
 
@@ -353,7 +365,8 @@ async function checkAndUpdate(symbol, strategyResult, opts = {}) {
       usingLearnedModel: hasLearnedModel,
       realTradesLogged: tradeLog.length,
       trustMultiplier: trust.multiplier,
-      trustReason: trust.reason
+      trustReason: trust.reason,
+      lossPatterns: analyzeLossPatterns(symbol, strategyResult.strategyId)
     },
     capital: entry.capital,
     startingCapital: entry.startingCapital,
